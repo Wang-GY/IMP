@@ -1,0 +1,2 @@
+# IMP
+Influence maximize problem
