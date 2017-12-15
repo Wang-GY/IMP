@@ -128,16 +128,16 @@ class Graph:
 def influence_spread_computation_IC(graph, seeds, sample_num=10000):
     influence = 0
     for i in range(sample_num):
-        actived = seeds
-        new_actived = actived
-        while (len(new_actived) != 0):
-            actived = new_actived
-            new_actived = []
-            for node in actived:
+        activated = seeds
+        new_activated = activated
+        while len(new_activated) != 0:
+            activated = new_activated
+            new_activated = []
+            for node in activated:
                 node_children = graph.get_children(node)
                 for j in range(graph.get_out_degree(node)):
                     if happen_with_prop(graph.get_weight(node, node_children[j])):
-                        new_actived.append(node_children[j])
+                        new_activated.append(node_children[j])
                         influence = influence + 1
     return int(influence / sample_num) + len(seeds)
 
@@ -146,19 +146,19 @@ def influence_spread_computation_LT(graph, seeds, sample_num=10000):
     influence = 0
     for i in range(sample_num):
         thresholds = np.random.rand(graph.node_num)
-        actived = seeds
-        new_actived = actived
-        while (len(new_actived) != 0):
-            actived = new_actived
-            new_actived = []
+        activated = seeds
+        new_activated = activated
+        while len(new_activated) != 0:
+            activated = new_activated
+            new_activated = []
             activity_vector = np.zeros(graph.node_num)
-            for node in actived:
+            for node in activated:
                 node_children = graph.get_children(node)
                 for child in node_children:
                     activity_vector[child - 1] = activity_vector[child - 1] + graph.get_weight(node, child)
             for i in range(graph.node_num):
                 if activity_vector[i] >= thresholds[i]:
-                    new_actived.append(i + 1)
+                    new_activated.append(i + 1)
                     influence = influence + 1
     return int(influence / sample_num) + len(seeds)
 
