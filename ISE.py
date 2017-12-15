@@ -21,25 +21,44 @@ def read_seed_info(path):
         'file can not found'
 
 
+# read and analyse the data in the file to obtain a graph object
 def read_graph_info(path):
     if os.path.exists(path):
+        parents = {}
+        children = {}
+        edges = {}
+        nodes = set()
+
         try:
             f = open(path, 'r')
             txt = f.readlines()
             header = str.split(txt[0])
             node_num = int(header[0])
             edge_num = int(header[1])
-            adjacent_matrix = np.zeros((node_num, node_num))
+
             for line in txt[1:]:
                 row = str.split(line)
-                adjacent_matrix[int(row[0]) - 1][int(row[1]) - 1] = float(row[2])
-            return adjacent_matrix, node_num, edge_num
+
+                src = int(row[0])
+                des = int(row[1])
+                nodes.add(src)
+                nodes.add(des)
+
+                if children.get(src) is None:
+                    children[src] = []
+                if parents.get(des) is None:
+                    parents[des] = []
+
+                weight = float(row[2])
+                edges[(src, des)] = weight
+                children[src].append(des)
+                parents[des].append(src)
+
+            return list(nodes), edges, children, parents, node_num, edge_num
         except IOError:
-            print
-            'IOError'
+            print 'IOError'
     else:
-        print
-        'file can not found'
+        print 'file can not found'
 
 
 def happen_with_prop(rate):
@@ -51,47 +70,43 @@ def happen_with_prop(rate):
 
 
 class Graph:
-    adjacent_matrix = 0  # np.array i,j represent the weight of edge(i+1,j+1)
-    node_num = 0  # number of nodes
-    # edge_num = 0# number of edges
-    children_buffer = {}  # buffer result
-    parents_buffer = {}
+    nodes = None
+    edges = None
+    children = None
+    parents = None
+    node_num = None
+    edge_num = None
 
-    def __init__(self, adjacent_matrix):
-        self.adjacent_matrix = adjacent_matrix
-        self.node_num = np.shape(adjacent_matrix)[0]
-        # self.edge_num = edge_num
+    def __init__(self, (nodes, edges, children, parents, node_num, edge_num)):
+        self.nodes = nodes
+        self.edges = edges
+        self.children = children
+        self.parents = parents
+        self.node_num = node_num
+        self.edge_num = edge_num
 
     def get_children(self, node):
-        children = self.children_buffer.get(node)
-        if children is None:
-            children = list()
-            for i in range(self.node_num):
-                if self.adjacent_matrix[node - 1][i] != 0:
-                    children.append(i + 1)
-            self.children_buffer.update({node: children})
-            return children
-        else:
-            return children
+        ch = self.children.get(node)
+        if ch is None:
+            self.children[node] = []
+        return self.children[node]
 
     def get_parents(self, node):
-        parents = self.parents_buffer.get(node)
-        if parents is None:
-            parents = list()
-            for i in range(self.node_num):
-                if self.adjacent_matrix[i][node - 1] != 0:
-                    parents.append(i + 1)
-            self.parents_buffer.update({node: parents})
-            return parents
-        else:
-            return parents
+        pa = self.parents.get(node)
+        if pa is None:
+            self.parents[node] = []
+        return pa
 
     def get_weight(self, src, dest):
-        return self.adjacent_matrix[src - 1][dest - 1]
+        weight = self.edges.get((src, dest))
+        if weight is None:
+            return 0
+        else:
+            return weight
 
     # return true if node1 is parent of node 2 , else return false
     def is_parent_of(self, node1, node2):
-        if self.adjacent_matrix[node1 - 1][node2 - 1] != 0:
+        if self.get_weight(node1, node2) != 0:
             return True
         else:
             return False
@@ -172,7 +187,7 @@ if __name__ == '__main__':
 
     np.random.seed(random_seed)
 
-    graph = Graph(read_graph_info(graph_path)[0])
+    graph = Graph(read_graph_info(graph_path))
     seeds = read_seed_info(seed_path)
 
     if model == 'IC':
