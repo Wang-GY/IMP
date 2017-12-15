@@ -97,7 +97,7 @@ class Graph:
         pa = self.parents.get(node)
         if pa is None:
             self.parents[node] = []
-        return pa
+        return self.parents[node]
 
     def get_weight(self, src, dest):
         weight = self.edges.get((src, dest))
