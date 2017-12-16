@@ -6,6 +6,7 @@ import argparse
 
 graph = None
 
+
 def read_seed_info(path):
     if os.path.exists(path):
         try:
@@ -162,6 +163,67 @@ class CELFQueue:
 
     def get_gain(self, node):
         return self.nodes_gain[node]
+
+
+def get_sample_graph(graph):
+    nodes = graph.nodes
+    edges = {}
+    children = {}
+    parents = {}
+    node_num = graph.node_num
+    edge_num = None
+    for edge in graph.edges:
+        if happen_with_prop(graph.edges[edge]):
+            edges[edge] = graph.edges[edge]
+            src = edge[0]
+            des = edge[1]
+
+            if children.get(src) is None:
+                children[src] = []
+            if parents.get(des) is None:
+                parents[des] = []
+
+            children[src].append(des)
+            parents[des].append(src)
+    return Graph((nodes, edges, children, parents, node_num, len(edges)))
+
+
+def BFS(graph, nodes, get_checked_array=False):
+    node_list = list()
+    node_list.extend(nodes)
+    result_list = list()
+    checked = np.zeros(graph.node_num)
+    for node in node_list:
+        checked[node - 1] = 1
+    while len(node_list) != 0:
+        current_node = node_list.pop(0)
+        result_list.append(current_node)
+        children = graph.get_children(current_node)
+        for child in children:
+            if checked[child - 1] == 0:
+                checked[child - 1] = 1
+                node_list.append(child)
+    if get_checked_array:
+        return result_list, checked
+    return result_list
+
+
+# k: seed size
+def new_greedyIC(graph, k, R=20000):
+    seeds = set()
+    for i in range(k):
+        sv = np.zeros(graph.node_num)
+        afficted_nodes, is_afficted = BFS(graph, list(seeds), True)
+        # for seed in seeds:
+        for i in range(R):
+            sample_graph = get_sample_graph(graph)
+            for v in range(graph.node_num):
+                if is_afficted[v] == 0:
+                    sv[v] = sv[v] + len(BFS(sample_graph, [v + 1]))
+        for i in range(graph.node_num):
+            sv[i] = sv[i] / R
+        seeds.add(sv.argmax() + 1)
+    return list(seeds)
 
 
 # Heuristics algorithm for IC model

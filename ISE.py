@@ -123,25 +123,32 @@ class Graph:
     def get_in_degree(self, node):
         return len(self.get_parents(node))
 
+
 # graph : Graph
 # seed : list
 # sample_num : int
-def influence_spread_computation_IC(graph, seeds, sample_num=10000):
+# graph : Graph
+# seed : list
+# sample_num : int
+# use multiple thread
+def influence_spread_computation_IC(seeds,sample_num=10000):
     influence = 0
     for i in range(sample_num):
-        activated = seeds
-        new_activated = activated
-        while len(new_activated) != 0:
-            activated = new_activated
-            new_activated = []
-            for node in activated:
-                node_children = graph.get_children(node)
-                for j in range(graph.get_out_degree(node)):
-                    if happen_with_prop(graph.get_weight(node, node_children[j])):
-                        new_activated.append(node_children[j])
-                        influence = influence + 1
-    return int(influence / sample_num) + len(seeds)
-
+        node_list = list()
+        node_list.extend(seeds)
+        checked = np.zeros(graph.node_num)
+        for node in node_list:
+            checked[node -1] =1
+        while len(node_list)!=0:
+            current_node = node_list.pop(0)
+            influence = influence+1
+            children = graph.get_children(current_node)
+            for child in children:
+                if checked[child-1]==0:
+                    if happen_with_prop(graph.get_weight(current_node,child)):
+                        checked[child-1]=1
+                        node_list.append(child)
+    return influence/sample_num
 
 
 def forward(Q, D, spd, pp, r, W, U, spdW_u):
@@ -250,7 +257,7 @@ if __name__ == '__main__':
     seeds = read_seed_info(seed_path)
 
     if model == 'IC':
-        print influence_spread_computation_IC(graph=graph, seeds=seeds, sample_num=10000)
+        print influence_spread_computation_IC(seeds=seeds, sample_num=10000)
     elif model == 'LT':
         print influence_spread_computation_LT(seeds=seeds)
     else:
