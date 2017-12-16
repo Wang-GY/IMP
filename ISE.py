@@ -2,8 +2,16 @@ import numpy as np
 import os
 import time
 import argparse
+import threading
+import multiprocessing
 
 graph = None
+
+
+# timer real time
+def settimeout(terment_time):
+    time.sleep(terment_time)
+    exit(1)
 
 
 def read_seed_info(path):
@@ -123,25 +131,47 @@ class Graph:
     def get_in_degree(self, node):
         return len(self.get_parents(node))
 
+
 # graph : Graph
 # seed : list
 # sample_num : int
+# graph : Graph
+# seed : list
+# sample_num : int
+# use multiple thread
 def influence_spread_computation_IC(graph, seeds, sample_num=10000):
     influence = 0
     for i in range(sample_num):
-        activated = seeds
-        new_activated = activated
-        while len(new_activated) != 0:
-            activated = new_activated
-            new_activated = []
-            for node in activated:
-                node_children = graph.get_children(node)
-                for j in range(graph.get_out_degree(node)):
-                    if happen_with_prop(graph.get_weight(node, node_children[j])):
-                        new_activated.append(node_children[j])
-                        influence = influence + 1
-    return int(influence / sample_num) + len(seeds)
+        node_list = list()
+        node_list.extend(seeds)
+        checked = np.zeros(graph.node_num)
+        for node in node_list:
+            checked[node - 1] = 1
+        while len(node_list) != 0:
+            current_node = node_list.pop(0)
+            influence = influence + 1
+            children = graph.get_children(current_node)
+            for child in children:
+                if checked[child - 1] == 0:
+                    if happen_with_prop(graph.get_weight(current_node, child)):
+                        checked[child - 1] = 1
+                        node_list.append(child)
+    return influence
 
+
+def influence_spread_computation_IC_Mu(graph, seeds, n=multiprocessing.cpu_count()):
+    pool = multiprocessing.Pool()
+    results = []
+    sub = int(10000 / n)
+    for i in range(n):
+        result = pool.apply_async(influence_spread_computation_IC, args=(graph, seeds, sub))
+        results.append(result)
+    pool.close()
+    pool.join()
+    influence = 0
+    for result in results:
+        influence = influence + result.get()
+    return influence / 10000
 
 
 def forward(Q, D, spd, pp, r, W, U, spdW_u):
@@ -228,7 +258,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', help='CARP instance file', dest='graph_path')
     parser.add_argument('-s', help='seed set', dest='seed_path')
     parser.add_argument('-m', help='diffusion model', dest='model')
-    parser.add_argument('-b',
+    parser.add_argument('-b', type=int,
                         help='specifies the termination manner and the value can only be 0 or 1. If it is set to 0, '
                              'the termination condition is as the same defined in your algorithm. Otherwise, '
                              'the maximal time budget specifies the termination condition of your algorithm.',
@@ -249,9 +279,23 @@ if __name__ == '__main__':
     graph = Graph(read_graph_info(graph_path))
     seeds = read_seed_info(seed_path)
 
-    if model == 'IC':
-        print influence_spread_computation_IC(graph=graph, seeds=seeds, sample_num=10000)
-    elif model == 'LT':
-        print influence_spread_computation_LT(seeds=seeds)
-    else:
-        print('Type err')
+    if type == 0:
+        if model == 'IC':
+            print influence_spread_computation_IC_Mu(seeds=seeds, graph=graph)
+        elif model == 'LT':
+            print influence_spread_computation_LT(seeds=seeds, r=0.01)
+        else:
+            print('Type err')
+    elif type == 1:
+        if timeout < 60:
+            print 'Given time should not less than 60s!'
+            exit(1)
+        timer = threading.Thread(target=settimeout, args=(timeout,))
+        timer.start()
+
+        if model == 'IC':
+            print influence_spread_computation_IC_Mu(seeds=seeds, graph=graph)
+        elif model == 'LT':
+            print influence_spread_computation_LT(seeds=seeds, r=0.001)
+        else:
+            print('Type err')

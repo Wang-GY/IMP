@@ -3,8 +3,18 @@ import os
 import heapq
 import time
 import argparse
+import threading
 
 graph = None
+seeds = None
+
+
+# timer real time
+def settimeout(terment_time):
+    time.sleep(terment_time)
+    print_seeds()
+    exit(1)
+
 
 def read_seed_info(path):
     if os.path.exists(path):
@@ -69,7 +79,7 @@ def happen_with_prop(rate):
         return False
 
 
-def print_seeds(seeds):
+def print_seeds():
     for seed in seeds:
         print(seed)
 
@@ -162,6 +172,67 @@ class CELFQueue:
 
     def get_gain(self, node):
         return self.nodes_gain[node]
+
+
+def get_sample_graph(graph):
+    nodes = graph.nodes
+    edges = {}
+    children = {}
+    parents = {}
+    node_num = graph.node_num
+    edge_num = None
+    for edge in graph.edges:
+        if happen_with_prop(graph.edges[edge]):
+            edges[edge] = graph.edges[edge]
+            src = edge[0]
+            des = edge[1]
+
+            if children.get(src) is None:
+                children[src] = []
+            if parents.get(des) is None:
+                parents[des] = []
+
+            children[src].append(des)
+            parents[des].append(src)
+    return Graph((nodes, edges, children, parents, node_num, len(edges)))
+
+
+def BFS(graph, nodes, get_checked_array=False):
+    node_list = list()
+    node_list.extend(nodes)
+    result_list = list()
+    checked = np.zeros(graph.node_num)
+    for node in node_list:
+        checked[node - 1] = 1
+    while len(node_list) != 0:
+        current_node = node_list.pop(0)
+        result_list.append(current_node)
+        children = graph.get_children(current_node)
+        for child in children:
+            if checked[child - 1] == 0:
+                checked[child - 1] = 1
+                node_list.append(child)
+    if get_checked_array:
+        return result_list, checked
+    return result_list
+
+
+# k: seed size
+def new_greedyIC(graph, k, R=20000):
+    seeds = set()
+    for i in range(k):
+        sv = np.zeros(graph.node_num)
+        afficted_nodes, is_afficted = BFS(graph, list(seeds), True)
+        # for seed in seeds:
+        for i in range(R):
+            sample_graph = get_sample_graph(graph)
+            for v in range(graph.node_num):
+                if is_afficted[v] == 0:
+                    sv[v] = sv[v] + len(BFS(sample_graph, [v + 1]))
+        for i in range(graph.node_num):
+            sv[i] = sv[i] / R
+        seeds.add(sv.argmax() + 1)
+    return list(seeds)
 
 
 # Heuristics algorithm for IC model
@@ -366,7 +437,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', help='CARP instance file', dest='graph_path')
     parser.add_argument('-k', type=int, help='predefined size of the seed set', dest='seed_size')
     parser.add_argument('-m', help='diffusion model', dest='model')
-    parser.add_argument('-b',
+    parser.add_argument('-b',type=int,
                         help='specifies the termination manner and the value can only be 0 or 1. If it is set to 0, '
                              'the termination condition is as the same defined in your algorithm. Otherwise, '
                              'the maximal time budget specifies the termination condition of your algorithm.',
@@ -379,18 +450,33 @@ if __name__ == '__main__':
     seed_size = args.seed_size
     model = args.model
     termination_type = args.type
+
     timeout = args.timeout
     random_seed = args.random_seed
 
     np.random.seed(random_seed)
-
     graph = Graph(read_graph_info(graph_path))
+    if termination_type == 0:
+        if model == 'IC':
+            seeds = degree_discount_ic(k=seed_size)
+            #seeds = new_greedyIC(graph, k=seed_size, R=10000)
+            print_seeds()
+        elif model == 'LT':
+            seeds = simpath(seed_size, 0.01, 4)
+            print_seeds()
+        else:
+            print('Model type err')
+    elif termination_type == 1:
+        if timeout < 0:
+            print 'Given time should not less than 60s!'
+            exit(1)
+        timer = threading.Thread(target=settimeout, args=(timeout - 1,))
+        timer.start()
 
-    if model == 'IC':
-        seeds = degree_discount_ic(k=seed_size)
-        print_seeds(seeds)
-    elif model == 'LT':
-        seeds = simpath(seed_size, 0.001, 4)
-        print_seeds(seeds)
-    else:
-        print('Type err')
+        if model == 'IC':
+            seeds = degree_discount_ic(k=seed_size)
+            seeds = new_greedyIC(graph, k=seed_size, R=10000)
+        elif model == 'LT':
+            seeds = simpath(seed_size, 0.001, 4)
+        else:
+            print('Model type err')
