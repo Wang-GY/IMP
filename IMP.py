@@ -3,8 +3,17 @@ import os
 import heapq
 import time
 import argparse
+import threading
 
 graph = None
+seeds = None
+
+
+# timer real time
+def settimeout(terment_time):
+    time.sleep(terment_time)
+    print_seeds()
+    exit(1)
 
 
 def read_seed_info(path):
@@ -70,7 +79,7 @@ def happen_with_prop(rate):
         return False
 
 
-def print_seeds(seeds):
+def print_seeds():
     for seed in seeds:
         print(seed)
 
@@ -428,7 +437,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', help='CARP instance file', dest='graph_path')
     parser.add_argument('-k', type=int, help='predefined size of the seed set', dest='seed_size')
     parser.add_argument('-m', help='diffusion model', dest='model')
-    parser.add_argument('-b',
+    parser.add_argument('-b',type=int,
                         help='specifies the termination manner and the value can only be 0 or 1. If it is set to 0, '
                              'the termination condition is as the same defined in your algorithm. Otherwise, '
                              'the maximal time budget specifies the termination condition of your algorithm.',
@@ -441,18 +450,33 @@ if __name__ == '__main__':
     seed_size = args.seed_size
     model = args.model
     termination_type = args.type
+
     timeout = args.timeout
     random_seed = args.random_seed
 
     np.random.seed(random_seed)
-
     graph = Graph(read_graph_info(graph_path))
+    if termination_type == 0:
+        if model == 'IC':
+            seeds = degree_discount_ic(k=seed_size)
+            #seeds = new_greedyIC(graph, k=seed_size, R=10000)
+            print_seeds()
+        elif model == 'LT':
+            seeds = simpath(seed_size, 0.01, 4)
+            print_seeds()
+        else:
+            print('Model type err')
+    elif termination_type == 1:
+        if timeout < 0:
+            print 'Given time should not less than 60s!'
+            exit(1)
+        timer = threading.Thread(target=settimeout, args=(timeout - 1,))
+        timer.start()
 
-    if model == 'IC':
-        seeds = degree_discount_ic(k=seed_size)
-        print_seeds(seeds)
-    elif model == 'LT':
-        seeds = simpath(seed_size, 0.001, 4)
-        print_seeds(seeds)
-    else:
-        print('Type err')
+        if model == 'IC':
+            seeds = degree_discount_ic(k=seed_size)
+            seeds = new_greedyIC(graph, k=seed_size, R=10000)
+        elif model == 'LT':
+            seeds = simpath(seed_size, 0.001, 4)
+        else:
+            print('Model type err')
