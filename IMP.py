@@ -289,13 +289,13 @@ def degree_discount_ic(k):
         u = ddv.argmax() + 1
         ddv[u - 1] = -1  # never used
         seeds.add(u)
-        parents = graph.get_parents(u)
-        for parent in parents:
-            if parent not in seeds:
-                tv[parent - 1] = tv[parent - 1] + 1
-                ddv[parent - 1] = ddv[parent - 1] - 2 * tv[parent - 1] - (graph.get_out_degree(parent) - tv[
-                    parent - 1]) * \
-                                                                         tv[parent - 1] * graph.get_weight(u, parent)
+        children = graph.get_children(u)
+        for child in children:
+            if child not in seeds:
+                tv[child - 1] = tv[child - 1] + 1
+                ddv[child - 1] = ddv[child - 1] - 2 * tv[child - 1] - (graph.get_out_degree(child) - tv[
+                    child - 1]) * \
+                                                                         tv[child - 1] * graph.get_weight(u, child)
     return list(seeds)
 
 
