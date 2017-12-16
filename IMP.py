@@ -1,8 +1,10 @@
 import numpy as np
 import os
+import heapq
 import time
 import argparse
 
+graph = None
 
 def read_seed_info(path):
     if os.path.exists(path):
@@ -17,6 +19,7 @@ def read_seed_info(path):
             print 'IOError'
     else:
         print 'file can not found'
+
 
 # read and analyse the data in the file to obtain a graph object
 def read_graph_info(path):
@@ -124,7 +127,41 @@ class Graph:
         return len(self.get_parents(node))
 
 
-graph = None
+# base on heap queue
+# The CELF queue is maintained in decreasing order of the marginal
+# gains and thus, no other node can have a larger marginal gain.
+class CELFQueue:
+    # create if not exist
+    nodes = None
+    q = None
+    nodes_gain = None
+
+    def __init__(self):
+        self.q = []
+        self.nodes_gain = {}
+
+    def put(self, node, marginalgain):
+        self.nodes_gain[node] = marginalgain
+        heapq.heappush(self.q, (-marginalgain, node))
+
+    def update(self, node, marginalgain):
+        self.remove(node)
+        self.put(node, marginalgain)
+
+    def remove(self, node):
+        self.q.remove((-self.nodes_gain[node], node))
+        self.nodes_gain[node] = None
+        heapq.heapify(self.q)
+
+    def topn(self, n):
+        top = heapq.nsmallest(n, self.q)
+        top_ = list()
+        for t in top:
+            top_.append(t[1])
+        return top_
+
+    def get_gain(self, node):
+        return self.nodes_gain[node]
 
 
 # Heuristics algorithm for IC model
@@ -169,6 +206,36 @@ def init_D():
     return D
 
 
+def get_vertex_cover():
+    # dv[i] out degree of node i+1
+    dv = np.zeros(graph.node_num)
+    # e[i,j] = 0: edge (i+1,j+1),(j+1,i+1) checked
+    check_array = np.zeros((graph.node_num, graph.node_num))
+    checked = 0
+    edges = set()
+    for i in range(graph.node_num):
+        # for a edge (i,j) and (j,i) may be count twice but the algorithm is to find a vertex cover. it doesn't mater
+        dv[i] = graph.get_out_degree(i + 1) + graph.get_in_degree(i + 1)
+    # V: Vertex cover
+    V = set()
+    while checked < graph.edge_num:
+        s = dv.argmax() + 1
+        V.add(s)
+        # make sure that never to select this node again
+        children = graph.get_children(s)
+        parents = graph.get_parents(s)
+        for child in children:
+            if check_array[s - 1][child - 1] == 0:
+                check_array[s - 1][child - 1] = 1
+                checked = checked + 1
+        for parent in parents:
+            if check_array[parent - 1][s - 1] == 0:
+                check_array[parent - 1][s - 1] = 1
+                checked = checked + 1
+        dv[s - 1] = -1
+    return list(V)
+
+
 # input: Q,D,spd,pp,r,W,U
 # Q:list
 # D:list(list) D[x]: explored neighbor of x
@@ -176,19 +243,18 @@ def init_D():
 # W node_set np.array
 # U: list
 # spdW_
-def forward(Q, D, spd, pp, r, W, U=None, spdW_=None):
+def forward(Q, D, spd, pp, r, W, U, spdW_u):
     x = Q[-1]
     if U is None:
         U = []
     children = graph.get_children(x)
-    q = to_sub_node_set(Q)
     count = 0
     while True:
         # any suitable chid is ok
 
         for child in range(count, len(children)):
-            if is_in_sub_node_set(children[child], W) and (not is_in_sub_node_set(children[child], q)) and (
-                        children[child] not in D[x]):
+            # if is_in_sub_node_set(children[child],W) and (not is_in_sub_node_set(children[child],q)) and (children[child] not in D[x]):
+            if (children[child] in W) and (children[child] not in Q) and (children[child] not in D[x]):
                 y = children[child]
                 break
             count = count + 1
@@ -206,18 +272,18 @@ def forward(Q, D, spd, pp, r, W, U=None, spdW_=None):
             D[x].append(y)
             x = Q[-1]
             for v in U:
-                if is_in_sub_node_set(v, q) == False:
-                    spdW_[v] = spdW_[v] + pp
+                if v not in Q:
+                    spdW_u[v] = spdW_u[v] + pp
             children = graph.get_children(x)
-            q = to_sub_node_set(Q)
             count = 0
 
 
-def backtrack(u, r, W, U=None, spdW_=None):
+def backtrack(u, r, W, U, spdW_):
     Q = [u]
     spd = 1
     pp = 1
     D = init_D()
+
     while len(Q) != 0:
         Q, D, spd, pp = forward(Q, D, spd, pp, r, W, U, spdW_)
         u = Q.pop()
@@ -228,64 +294,71 @@ def backtrack(u, r, W, U=None, spdW_=None):
     return spd
 
 
-def simpath_spread(S, r, U=None, spdW_=None):
+def simpath_spread(S, r, U, spdW_=None):
     spread = 0
     # W: V-S
-    W = np.ones(graph.node_num)
-    for s in S:
-        W[s - 1] = 0
+    W = set(graph.nodes).difference(S)
+    if U is None or spdW_ is None:
+        spdW_ = np.zeros(graph.node_num + 1)
+        # print 'U None'
     for u in S:
-        # W = W-u
-        W[u - 1] = 1
-        spread = spread + backtrack(u, r, W, U, spdW_)
-        # W = W+u
-        W[u - 1] = 0
+        W.add(u)
+        # print spdW_[u]
+        spread = spread + backtrack(u, r, W, U, spdW_[u])
+        # print spdW_[u]
+        W.remove(u)
     return spread
 
 
-# simpath algorithm with plan greedy algorithm
-def simpath_greedy(k):
-    S = []
+def simpath(k, r, l):
+    C = set(get_vertex_cover())
+    V = set(graph.nodes)
+
+    V_C = V.difference(C)
+    # spread[x] is spd of S + x
+    spread = np.zeros(graph.node_num + 1)
+    spdV_ = np.ones((graph.node_num + 1, graph.node_num + 1))
+    for u in C:
+        U = V_C.intersection(set(graph.get_parents(u)))
+        spread[u] = simpath_spread(set([u]), r, U, spdV_)
+    for v in V_C:
+        v_children = graph.get_children(v)
+        for child in v_children:
+            spread[v] = spread[v] + spdV_[child][v] * graph.get_weight(v, child)
+        spread[v] = spread[v] + 1
+    celf = CELFQueue()
+    # put all nodes into celf queqe
+    # spread[v] is the marginal gain at this time
+    for node in range(1, graph.node_num + 1):
+        celf.put(node, spread[node])
+    S = set()
+    W = V
     spd = 0
-    marginal_gain = np.zeros(graph.node_num + 1)
-    for i in range(k):
-        for node in range(1, graph.node_num + 1):
-            marginal_gain[node] = simpath_spread(S + [node], 0.001) - spd
-        for t in S:
-            marginal_gain[t] = -1
-        u = marginal_gain.argmax()
-        S.append(u)
-        # print('add node %d' % u)
-        spd = simpath_spread(S, 0.001)
+    # mark the node that checked before during the same Si
+    checked = np.zeros(graph.node_num + 1)
+
+    while len(S) < k:
+        U = celf.topn(l)
+        spdW_ = np.ones((graph.node_num + 1, graph.node_num + 1))
+        spdV_x = np.zeros(graph.node_num + 1)
+        simpath_spread(S, r, U, spdW_=spdW_)
+        for x in U:
+            for s in S:
+                spdV_x[x] = spdV_x[x] + spdW_[s][x]
+        for x in U:
+            if checked[x] != 0:
+                S.add(x)
+                W = W.difference(set([x]))
+                spd = spread[x]
+                # print spread[x],simpath_spread(S,r,None,None)
+                checked = np.zeros(graph.node_num + 1)
+                celf.remove(x)
+                break
+            else:
+                spread[x] = backtrack(x, r, W, None, None) + spdV_x[x]
+                checked[x] = 1
+                celf.update(x, spread[x] - spd)
     return S
-
-
-'''
-# k seed size
-# r forward rate
-# l window size
-def simpath(k,r,l):
-    '''
-
-
-def get_vertex_cover():
-    # dv[i] out degree of node i+1
-    dv = np.zeros(graph.node_num)
-    # e[i,j] = 0: edge (i+1,j+1),(j+1,i+1) checked
-    checked = 0
-
-    for i in range(graph.node_num):
-        # for a edge (i,j) and (j,i) may be count twice but the algorithm is to find a vertex cover. it doesn't mater
-        dv[i] = graph.get_out_degree(i + 1) + graph.get_in_degree(i + 1)
-    # V: Vertex cover
-    V = list()
-    while checked < graph.edge_num:
-        s = dv.argmax() + 1
-        V.append(s)
-        # make sure that never to select this node again
-        checked = checked + dv[s - 1]
-        dv[s - 1] = -1
-    return V
 
 
 if __name__ == '__main__':
@@ -317,7 +390,7 @@ if __name__ == '__main__':
         seeds = degree_discount_ic(k=seed_size)
         print_seeds(seeds)
     elif model == 'LT':
-        seeds = simpath_greedy(k=seed_size)
+        seeds = simpath(seed_size, 0.001, 4)
         print_seeds(seeds)
     else:
         print('Type err')
