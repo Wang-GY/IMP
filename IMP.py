@@ -4,6 +4,7 @@ import heapq
 import time
 import argparse
 import threading
+import multiprocessing
 
 graph = None
 seeds = None
@@ -217,6 +218,48 @@ def BFS(graph, nodes, get_checked_array=False):
     return result_list
 
 
+# graph : Graph
+# seed : list
+# sample_num : int
+# graph : Graph
+# seed : list
+# sample_num : int
+# use multiple thread
+def influence_spread_computation_IC(graph, seeds, sample_num=10000):
+    influence = 0
+    for i in range(sample_num):
+        node_list = list()
+        node_list.extend(seeds)
+        checked = np.zeros(graph.node_num)
+        for node in node_list:
+            checked[node - 1] = 1
+        while len(node_list) != 0:
+            current_node = node_list.pop(0)
+            influence = influence + 1
+            children = graph.get_children(current_node)
+            for child in children:
+                if checked[child - 1] == 0:
+                    if happen_with_prop(graph.get_weight(current_node, child)):
+                        checked[child - 1] = 1
+                        node_list.append(child)
+    return influence
+
+
+def influence_spread_computation_IC_Mu(graph, seeds, n=multiprocessing.cpu_count()):
+    pool = multiprocessing.Pool()
+    results = []
+    sub = int(10000 / n)
+    for i in range(n):
+        result = pool.apply_async(influence_spread_computation_IC, args=(graph, seeds, sub))
+        results.append(result)
+    pool.close()
+    pool.join()
+    influence = 0
+    for result in results:
+        influence = influence + result.get()
+    return influence / 10000
+
+
 # k: seed size
 def new_greedyIC(graph, k, R=20000):
     seeds = set()
@@ -246,28 +289,14 @@ def degree_discount_ic(k):
         u = ddv.argmax() + 1
         ddv[u - 1] = -1  # never used
         seeds.add(u)
-        children = graph.get_children(u)
-        for child in children:
-            if child not in seeds:
-                tv[child - 1] = tv[child - 1] + 1
-                ddv[child - 1] = ddv[child - 1] - 2 * tv[child - 1] - (graph.get_out_degree(child) - tv[child - 1]) * \
-                                                                      tv[child - 1] * graph.get_weight(u, child)
+        parents = graph.get_parents(u)
+        for parent in parents:
+            if parent not in seeds:
+                tv[parent - 1] = tv[parent - 1] + 1
+                ddv[parent - 1] = ddv[parent - 1] - 2 * tv[parent - 1] - (graph.get_out_degree(parent) - tv[
+                    parent - 1]) * \
+                                                                         tv[parent - 1] * graph.get_weight(u, parent)
     return list(seeds)
-
-
-def to_sub_node_set(nodes):
-    sub_node_set = np.zeros(graph.node_num)
-    for node in nodes:
-        sub_node_set[node - 1] = 1
-    return sub_node_set
-
-
-# sub_node_set: np.array
-def is_in_sub_node_set(node, sub_node_set):
-    if sub_node_set[node - 1] == 1:
-        return True
-    else:
-        return False
 
 
 def init_D():
@@ -437,7 +466,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', help='CARP instance file', dest='graph_path')
     parser.add_argument('-k', type=int, help='predefined size of the seed set', dest='seed_size')
     parser.add_argument('-m', help='diffusion model', dest='model')
-    parser.add_argument('-b',type=int,
+    parser.add_argument('-b', type=int,
                         help='specifies the termination manner and the value can only be 0 or 1. If it is set to 0, '
                              'the termination condition is as the same defined in your algorithm. Otherwise, '
                              'the maximal time budget specifies the termination condition of your algorithm.',
@@ -458,12 +487,20 @@ if __name__ == '__main__':
     graph = Graph(read_graph_info(graph_path))
     if termination_type == 0:
         if model == 'IC':
-            seeds = degree_discount_ic(k=seed_size)
-            #seeds = new_greedyIC(graph, k=seed_size, R=10000)
+            start = time.time()
+            if graph.node_num <= 200:
+                seeds = new_greedyIC(graph, k=seed_size, R=10000)
+            else:
+                seeds = degree_discount_ic(k=seed_size)
+            # seeds = new_greedyIC(graph, k=seed_size, R=10000)
             print_seeds()
+            run_time = (time.time() - start)
         elif model == 'LT':
-            seeds = simpath(seed_size, 0.01, 4)
+            start = time.time()
+            seeds = simpath(seed_size, 0.001, 7)
+            run_time = (time.time() - start)
             print_seeds()
+            print run_time
         else:
             print('Model type err')
     elif termination_type == 1:
@@ -474,9 +511,12 @@ if __name__ == '__main__':
         timer.start()
 
         if model == 'IC':
-            seeds = degree_discount_ic(k=seed_size)
-            seeds = new_greedyIC(graph, k=seed_size, R=10000)
+            if graph.node_num <= 200:
+                seeds = new_greedyIC(graph, k=seed_size, R=10000)
+            else:
+                seeds = degree_discount_ic(k=seed_size)
+                seeds = new_greedyIC(graph, k=seed_size, R=10000)
         elif model == 'LT':
-            seeds = simpath(seed_size, 0.001, 4)
+            seeds = simpath(seed_size, 0.001, 7)
         else:
             print('Model type err')
