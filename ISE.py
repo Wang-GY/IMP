@@ -3,6 +3,8 @@ import os
 import time
 import argparse
 
+graph = None
+
 
 def read_seed_info(path):
     if os.path.exists(path):
@@ -121,7 +123,6 @@ class Graph:
     def get_in_degree(self, node):
         return len(self.get_parents(node))
 
-
 # graph : Graph
 # seed : list
 # sample_num : int
@@ -142,25 +143,83 @@ def influence_spread_computation_IC(graph, seeds, sample_num=10000):
     return int(influence / sample_num) + len(seeds)
 
 
-def influence_spread_computation_LT(graph, seeds, sample_num=10000):
-    influence = 0
-    for i in range(sample_num):
-        thresholds = np.random.rand(graph.node_num)
-        activated = seeds
-        new_activated = activated
-        while len(new_activated) != 0:
-            activated = new_activated
-            new_activated = []
-            activity_vector = np.zeros(graph.node_num)
-            for node in activated:
-                node_children = graph.get_children(node)
-                for child in node_children:
-                    activity_vector[child - 1] = activity_vector[child - 1] + graph.get_weight(node, child)
-            for i in range(graph.node_num):
-                if activity_vector[i] >= thresholds[i]:
-                    new_activated.append(i + 1)
-                    influence = influence + 1
-    return int(influence / sample_num) + len(seeds)
+
+def forward(Q, D, spd, pp, r, W, U, spdW_u):
+    x = Q[-1]
+    if U is None:
+        U = []
+    children = graph.get_children(x)
+    count = 0
+    while True:
+        # any suitable chid is ok
+
+        for child in range(count, len(children)):
+            # if is_in_sub_node_set(children[child],W) and (not is_in_sub_node_set(children[child],q)) and (children[child] not in D[x]):
+            if (children[child] in W) and (children[child] not in Q) and (children[child] not in D[x]):
+                y = children[child]
+                break
+            count = count + 1
+
+        # no such child:
+        if count == len(children):
+            return Q, D, spd, pp
+
+        if pp * graph.get_weight(x, y) < r:
+            D[x].append(y)
+        else:
+            Q.append(y)
+            pp = pp * graph.get_weight(x, y)
+            spd = spd + pp
+            D[x].append(y)
+            x = Q[-1]
+            for v in U:
+                if v not in Q:
+                    spdW_u[v] = spdW_u[v] + pp
+            children = graph.get_children(x)
+            count = 0
+
+
+def backtrack(u, r, W, U, spdW_):
+    Q = [u]
+    spd = 1
+    pp = 1
+    D = init_D()
+
+    while len(Q) != 0:
+        Q, D, spd, pp = forward(Q, D, spd, pp, r, W, U, spdW_)
+        u = Q.pop()
+        D[u] = []
+        if len(Q) != 0:
+            v = Q[-1]
+            pp = pp / graph.get_weight(v, u)
+    return spd
+
+
+def simpath_spread(S, r, U, spdW_=None):
+    spread = 0
+    # W: V-S
+    W = set(graph.nodes).difference(S)
+    if U is None or spdW_ is None:
+        spdW_ = np.zeros(graph.node_num + 1)
+        # print 'U None'
+    for u in S:
+        W.add(u)
+        # print spdW_[u]
+        spread = spread + backtrack(u, r, W, U, spdW_[u])
+        # print spdW_[u]
+        W.remove(u)
+    return spread
+
+
+def influence_spread_computation_LT(seeds, r=0.01):
+    return simpath_spread(seeds, r, None)
+
+
+def init_D():
+    D = list()
+    for i in range(graph.node_num + 1):
+        D.append([])
+    return D
 
 
 if __name__ == '__main__':
@@ -191,8 +250,8 @@ if __name__ == '__main__':
     seeds = read_seed_info(seed_path)
 
     if model == 'IC':
-        print(influence_spread_computation_IC(graph=graph, seeds=seeds, sample_num=10000))
+        print influence_spread_computation_IC(graph=graph, seeds=seeds, sample_num=10000)
     elif model == 'LT':
-        print(influence_spread_computation_LT(graph=graph, seeds=seeds, sample_num=10000))
+        print influence_spread_computation_LT(seeds=seeds)
     else:
         print('Type err')
