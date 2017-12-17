@@ -6,11 +6,13 @@ import threading
 import multiprocessing
 
 graph = None
+spd = None
 
 
 # timer real time
 def settimeout(terment_time):
-    time.sleep(terment_time)
+    time.sleep(terment_time - 0.1)
+    print spd
     exit(1)
 
 
@@ -263,7 +265,7 @@ if __name__ == '__main__':
                              'the termination condition is as the same defined in your algorithm. Otherwise, '
                              'the maximal time budget specifies the termination condition of your algorithm.',
                         dest='type')
-    parser.add_argument('-t', type=int, help='termination', dest='timeout')
+    parser.add_argument('-t', type=float, help='termination', dest='timeout')
     parser.add_argument('-r', type=int, help='random seed', dest='random_seed')
 
     args = parser.parse_args()
@@ -283,7 +285,7 @@ if __name__ == '__main__':
         if model == 'IC':
             print influence_spread_computation_IC_Mu(seeds=seeds, graph=graph)
         elif model == 'LT':
-            print influence_spread_computation_LT(seeds=seeds, r=0.01)
+            print influence_spread_computation_LT(seeds=seeds, r=0.001)
         else:
             print('Type err')
     elif type == 1:
@@ -294,8 +296,8 @@ if __name__ == '__main__':
         timer.start()
 
         if model == 'IC':
-            print influence_spread_computation_IC_Mu(seeds=seeds, graph=graph)
+            spd = influence_spread_computation_IC_Mu(seeds=seeds, graph=graph)
         elif model == 'LT':
-            print influence_spread_computation_LT(seeds=seeds, r=0.001)
+            spd = influence_spread_computation_LT(seeds=seeds, r=0.001)
         else:
             print('Type err')

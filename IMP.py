@@ -12,7 +12,7 @@ seeds = None
 
 # timer real time
 def settimeout(terment_time):
-    time.sleep(terment_time)
+    time.sleep(terment_time - 0.1)
     print_seeds()
     exit(1)
 
@@ -181,7 +181,7 @@ def get_sample_graph(graph):
     children = {}
     parents = {}
     node_num = graph.node_num
-    edge_num = None
+
     for edge in graph.edges:
         if happen_with_prop(graph.edges[edge]):
             edges[edge] = graph.edges[edge]
@@ -261,7 +261,7 @@ def influence_spread_computation_IC_Mu(graph, seeds, n=multiprocessing.cpu_count
 
 
 # k: seed size
-def new_greedyIC(graph, k, R=20000):
+def new_greedyIC(graph, k, R=10000):
     seeds = set()
     for i in range(k):
         sv = np.zeros(graph.node_num)
@@ -278,9 +278,41 @@ def new_greedyIC(graph, k, R=20000):
     return list(seeds)
 
 
+def sample_IC(graph, is_afficted, seed, R):
+    sv = np.zeros(graph.node_num)
+    for i in range(R):
+        sample_graph = get_sample_graph(graph)
+        for v in range(graph.node_num):
+            if is_afficted[v] == 0:
+                sv[v] = sv[v] + len(BFS(sample_graph, [v + 1]))
+    return sv
+
+
+def new_greedyIC_Mu(graph, k, R=10000, n=multiprocessing.cpu_count()):
+    sub = int(R / n)
+    seeds = set()
+    for i in range(k):
+        sv = np.zeros(graph.node_num)
+        afficted_nodes, is_afficted = BFS(graph, list(seeds), True)
+        pool = multiprocessing.Pool()
+        results = []
+        for i in range(n):
+            result = pool.apply_async(sample_IC, args=(graph, is_afficted, seeds, sub))
+            results.append(result)
+        pool.close()
+        pool.join()
+        for result in results:
+            for i in range(len(sv)):
+                sv[i] = sv[i] + result.get()[i]
+        for i in range(len(sv)):
+            sv[i] = sv[i] / R
+        seeds.add(sv.argmax() + 1)
+    return list(seeds)
+
+
 # Heuristics algorithm for IC model
 def degree_discount_ic(k):
-    seeds = set()
+    seeds = []
     ddv = np.zeros(graph.node_num)
     tv = np.zeros(graph.node_num)
     for i in range(graph.node_num):
@@ -288,15 +320,32 @@ def degree_discount_ic(k):
     for i in range(k):
         u = ddv.argmax() + 1
         ddv[u - 1] = -1  # never used
-        seeds.add(u)
+        seeds.append(u)
         children = graph.get_children(u)
         for child in children:
             if child not in seeds:
                 tv[child - 1] = tv[child - 1] + 1
                 ddv[child - 1] = ddv[child - 1] - 2 * tv[child - 1] - (graph.get_out_degree(child) - tv[
-                    child - 1]) * \
-                                                                         tv[child - 1] * graph.get_weight(u, child)
-    return list(seeds)
+                    child - 1]) * tv[child - 1] * graph.get_weight(u, child)
+    return seeds
+
+
+# BAD Heuristics algorithm for IC model
+def degree_discount(k):
+    seeds = []
+    ddv = np.zeros(graph.node_num)
+
+    for i in range(graph.node_num):
+        ddv[i] = graph.get_out_degree(i + 1)
+    for i in range(k):
+        u = ddv.argmax() + 1
+        ddv[u - 1] = -1  # never used
+        seeds.append(u)
+        children = graph.get_children(u)
+        for child in children:
+            if child not in seeds:
+                ddv[child - 1] = ddv[child - 1] - 1
+    return seeds
 
 
 def init_D():
@@ -312,7 +361,7 @@ def get_vertex_cover():
     # e[i,j] = 0: edge (i+1,j+1),(j+1,i+1) checked
     check_array = np.zeros((graph.node_num, graph.node_num))
     checked = 0
-    edges = set()
+
     for i in range(graph.node_num):
         # for a edge (i,j) and (j,i) may be count twice but the algorithm is to find a vertex cover. it doesn't mater
         dv[i] = graph.get_out_degree(i + 1) + graph.get_in_degree(i + 1)
@@ -471,7 +520,7 @@ if __name__ == '__main__':
                              'the termination condition is as the same defined in your algorithm. Otherwise, '
                              'the maximal time budget specifies the termination condition of your algorithm.',
                         dest='type')
-    parser.add_argument('-t', type=int, help='time budget', dest='timeout')
+    parser.add_argument('-t', type=float, help='time budget', dest='timeout')
     parser.add_argument('-r', type=int, help='random seed', dest='random_seed')
 
     args = parser.parse_args()
@@ -487,36 +536,31 @@ if __name__ == '__main__':
     graph = Graph(read_graph_info(graph_path))
     if termination_type == 0:
         if model == 'IC':
-            start = time.time()
-            if graph.node_num <= 200:
-                seeds = new_greedyIC(graph, k=seed_size, R=10000)
+            if graph.node_num <= 5000:
+                seeds = new_greedyIC_Mu(graph, k=seed_size, R=10000)
+                print_seeds()
             else:
-                seeds = degree_discount_ic(k=seed_size)
-            # seeds = new_greedyIC(graph, k=seed_size, R=10000)
-            print_seeds()
-            run_time = (time.time() - start)
+                seeds = degree_discount_ic(seed_size)
+                print_seeds()
+
         elif model == 'LT':
-            start = time.time()
             seeds = simpath(seed_size, 0.001, 7)
-            run_time = (time.time() - start)
             print_seeds()
-            print run_time
         else:
             print('Model type err')
     elif termination_type == 1:
-        if timeout < 0:
+        if timeout < 60:
             print 'Given time should not less than 60s!'
             exit(1)
+
         timer = threading.Thread(target=settimeout, args=(timeout - 1,))
         timer.start()
 
         if model == 'IC':
-            if graph.node_num <= 200:
-                seeds = new_greedyIC(graph, k=seed_size, R=10000)
-            else:
-                seeds = degree_discount_ic(k=seed_size)
-                seeds = new_greedyIC(graph, k=seed_size, R=10000)
+            seeds = degree_discount_ic(k=seed_size)
+            seeds = new_greedyIC(graph, k=seed_size, R=10000)
         elif model == 'LT':
+            seeds = degree_discount(seed_size)
             seeds = simpath(seed_size, 0.001, 7)
         else:
             print('Model type err')
