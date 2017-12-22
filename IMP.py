@@ -1,20 +1,11 @@
 import numpy as np
 import os
 import heapq
-import time
 import argparse
 import threading
 import multiprocessing
-
-graph = None
-seeds = None
-
-
-# timer real time
-def settimeout(terment_time):
-    time.sleep(terment_time - 0.1)
-    print_seeds()
-    exit(1)
+import sys
+import Queue
 
 
 def read_seed_info(path):
@@ -80,7 +71,7 @@ def happen_with_prop(rate):
         return False
 
 
-def print_seeds():
+def print_seeds(seeds):
     for seed in seeds:
         print(seed)
 
@@ -311,7 +302,7 @@ def new_greedyIC_Mu(graph, k, R=10000, n=multiprocessing.cpu_count()):
 
 
 # Heuristics algorithm for IC model
-def degree_discount_ic(k):
+def degree_discount_ic(k, graph):
     seeds = []
     ddv = np.zeros(graph.node_num)
     tv = np.zeros(graph.node_num)
@@ -331,7 +322,7 @@ def degree_discount_ic(k):
 
 
 # BAD Heuristics algorithm for IC model
-def degree_discount(k):
+def degree_discount(k, graph):
     seeds = []
     ddv = np.zeros(graph.node_num)
 
@@ -348,14 +339,14 @@ def degree_discount(k):
     return seeds
 
 
-def init_D():
+def init_D(graph):
     D = list()
     for i in range(graph.node_num + 1):
         D.append([])
     return D
 
 
-def get_vertex_cover():
+def get_vertex_cover(graph):
     # dv[i] out degree of node i+1
     dv = np.zeros(graph.node_num)
     # e[i,j] = 0: edge (i+1,j+1),(j+1,i+1) checked
@@ -392,7 +383,7 @@ def get_vertex_cover():
 # W node_set np.array
 # U: list
 # spdW_
-def forward(Q, D, spd, pp, r, W, U, spdW_u):
+def forward(Q, D, spd, pp, r, W, U, spdW_u, graph):
     x = Q[-1]
     if U is None:
         U = []
@@ -402,7 +393,6 @@ def forward(Q, D, spd, pp, r, W, U, spdW_u):
         # any suitable chid is ok
 
         for child in range(count, len(children)):
-            # if is_in_sub_node_set(children[child],W) and (not is_in_sub_node_set(children[child],q)) and (children[child] not in D[x]):
             if (children[child] in W) and (children[child] not in Q) and (children[child] not in D[x]):
                 y = children[child]
                 break
@@ -427,14 +417,14 @@ def forward(Q, D, spd, pp, r, W, U, spdW_u):
             count = 0
 
 
-def backtrack(u, r, W, U, spdW_):
+def backtrack(u, r, W, U, spdW_, graph):
     Q = [u]
     spd = 1
     pp = 1
-    D = init_D()
+    D = init_D(graph)
 
     while len(Q) != 0:
-        Q, D, spd, pp = forward(Q, D, spd, pp, r, W, U, spdW_)
+        Q, D, spd, pp = forward(Q, D, spd, pp, r, W, U, spdW_, graph)
         u = Q.pop()
         D[u] = []
         if len(Q) != 0:
@@ -443,7 +433,7 @@ def backtrack(u, r, W, U, spdW_):
     return spd
 
 
-def simpath_spread(S, r, U, spdW_=None):
+def simpath_spread(S, r, U, graph, spdW_=None):
     spread = 0
     # W: V-S
     W = set(graph.nodes).difference(S)
@@ -453,14 +443,14 @@ def simpath_spread(S, r, U, spdW_=None):
     for u in S:
         W.add(u)
         # print spdW_[u]
-        spread = spread + backtrack(u, r, W, U, spdW_[u])
+        spread = spread + backtrack(u, r, W, U, spdW_[u], graph)
         # print spdW_[u]
         W.remove(u)
     return spread
 
 
-def simpath(k, r, l):
-    C = set(get_vertex_cover())
+def simpath(graph, k, r, l):
+    C = set(get_vertex_cover(graph))
     V = set(graph.nodes)
 
     V_C = V.difference(C)
@@ -469,7 +459,7 @@ def simpath(k, r, l):
     spdV_ = np.ones((graph.node_num + 1, graph.node_num + 1))
     for u in C:
         U = V_C.intersection(set(graph.get_parents(u)))
-        spread[u] = simpath_spread(set([u]), r, U, spdV_)
+        spread[u] = simpath_spread(set([u]), r, U, graph, spdV_)
     for v in V_C:
         v_children = graph.get_children(v)
         for child in v_children:
@@ -490,7 +480,7 @@ def simpath(k, r, l):
         U = celf.topn(l)
         spdW_ = np.ones((graph.node_num + 1, graph.node_num + 1))
         spdV_x = np.zeros(graph.node_num + 1)
-        simpath_spread(S, r, U, spdW_=spdW_)
+        simpath_spread(S, r, U, graph, spdW_=spdW_)
         for x in U:
             for s in S:
                 spdV_x[x] = spdV_x[x] + spdW_[s][x]
@@ -504,13 +494,37 @@ def simpath(k, r, l):
                 celf.remove(x)
                 break
             else:
-                spread[x] = backtrack(x, r, W, None, None) + spdV_x[x]
+                spread[x] = backtrack(x, r, W, None, None, graph) + spdV_x[x]
                 checked[x] = 1
                 celf.update(x, spread[x] - spd)
     return S
 
 
+def main(args, q):
+    graph_path = args.graph_path
+    seed_size = args.seed_size
+    model = args.model
+    random_seed = args.random_seed
+    np.random.seed(random_seed)
+    graph = Graph(read_graph_info(graph_path))
+
+    if model == 'IC':
+        seeds = degree_discount_ic(k=seed_size, graph=graph)
+        q.put(seeds)
+        seeds = new_greedyIC(graph, k=seed_size, R=10000)
+        q.put(seeds)
+
+    elif model == 'LT':
+        seeds = degree_discount(seed_size, graph)
+        q.put(seeds)
+        seeds = simpath(graph, seed_size, 0.001, 7)
+        q.put(seeds)
+    else:
+        raise ValueError('Model type err')
+
+
 if __name__ == '__main__':
+
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', help='CARP instance file', dest='graph_path')
     parser.add_argument('-k', type=int, help='predefined size of the seed set', dest='seed_size')
@@ -533,34 +547,37 @@ if __name__ == '__main__':
     random_seed = args.random_seed
 
     np.random.seed(random_seed)
-    graph = Graph(read_graph_info(graph_path))
+
     if termination_type == 0:
+        graph = Graph(read_graph_info(graph_path))
         if model == 'IC':
-            if graph.node_num <= 5000:
+            if graph.node_num <= 300:
                 seeds = new_greedyIC_Mu(graph, k=seed_size, R=10000)
-                print_seeds()
+                print_seeds(seeds)
             else:
-                seeds = degree_discount_ic(seed_size)
-                print_seeds()
+                seeds = degree_discount_ic(k=seed_size, graph=graph)
+                print_seeds(seeds)
 
         elif model == 'LT':
-            seeds = simpath(seed_size, 0.001, 7)
-            print_seeds()
+            seeds = simpath(graph, seed_size, 0.001, 7)
+            print_seeds(seeds)
         else:
             print('Model type err')
     elif termination_type == 1:
+
         if timeout < 60:
             print 'Given time should not less than 60s!'
-            exit(1)
-
-        timer = threading.Thread(target=settimeout, args=(timeout - 1,))
-        timer.start()
-
-        if model == 'IC':
-            seeds = degree_discount_ic(k=seed_size)
-            seeds = new_greedyIC(graph, k=seed_size, R=10000)
-        elif model == 'LT':
-            seeds = degree_discount(seed_size)
-            seeds = simpath(seed_size, 0.001, 7)
+            sys.exit(1)
+        q = Queue.Queue()
+        t = threading.Thread(target=main, args=(args, q))
+        t.setDaemon(True)
+        t.start()
+        t.join(timeout - 0.5)
+        result = list()
+        while not q.empty():
+            result.append(q.get())
+        if len(result) != 0:
+            seeds = result[-1]
+            print_seeds(seeds)
         else:
-            print('Model type err')
+            print("Given time was too short")
