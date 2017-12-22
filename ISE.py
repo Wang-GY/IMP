@@ -1,19 +1,11 @@
 import numpy as np
 import os
-import time
 import argparse
 import threading
 import multiprocessing
+import Queue
 
-graph = None
 spd = None
-
-
-# timer real time
-def settimeout(terment_time):
-    time.sleep(terment_time - 0.1)
-    print spd
-    exit(1)
 
 
 def read_seed_info(path):
@@ -176,7 +168,14 @@ def influence_spread_computation_IC_Mu(graph, seeds, n=multiprocessing.cpu_count
     return influence / 10000
 
 
-def forward(Q, D, spd, pp, r, W, U, spdW_u):
+# input: Q,D,spd,pp,r,W,U
+# Q:list
+# D:list(list) D[x]: explored neighbor of x
+# spd ,pp,r: float
+# W node_set np.array
+# U: list
+# spdW_
+def forward(Q, D, spd, pp, r, W, U, spdW_u, graph):
     x = Q[-1]
     if U is None:
         U = []
@@ -186,7 +185,6 @@ def forward(Q, D, spd, pp, r, W, U, spdW_u):
         # any suitable chid is ok
 
         for child in range(count, len(children)):
-            # if is_in_sub_node_set(children[child],W) and (not is_in_sub_node_set(children[child],q)) and (children[child] not in D[x]):
             if (children[child] in W) and (children[child] not in Q) and (children[child] not in D[x]):
                 y = children[child]
                 break
@@ -211,14 +209,14 @@ def forward(Q, D, spd, pp, r, W, U, spdW_u):
             count = 0
 
 
-def backtrack(u, r, W, U, spdW_):
+def backtrack(u, r, W, U, spdW_, graph):
     Q = [u]
     spd = 1
     pp = 1
-    D = init_D()
+    D = init_D(graph)
 
     while len(Q) != 0:
-        Q, D, spd, pp = forward(Q, D, spd, pp, r, W, U, spdW_)
+        Q, D, spd, pp = forward(Q, D, spd, pp, r, W, U, spdW_, graph)
         u = Q.pop()
         D[u] = []
         if len(Q) != 0:
@@ -227,7 +225,7 @@ def backtrack(u, r, W, U, spdW_):
     return spd
 
 
-def simpath_spread(S, r, U, spdW_=None):
+def simpath_spread(S, r, U, graph, spdW_=None):
     spread = 0
     # W: V-S
     W = set(graph.nodes).difference(S)
@@ -237,21 +235,41 @@ def simpath_spread(S, r, U, spdW_=None):
     for u in S:
         W.add(u)
         # print spdW_[u]
-        spread = spread + backtrack(u, r, W, U, spdW_[u])
+        spread = spread + backtrack(u, r, W, U, spdW_[u], graph)
         # print spdW_[u]
         W.remove(u)
     return spread
 
 
-def influence_spread_computation_LT(seeds, r=0.01):
-    return simpath_spread(seeds, r, None)
+def influence_spread_computation_LT(graph, seeds, r=0.01):
+    return simpath_spread(seeds, r, None, graph)
 
 
-def init_D():
+def init_D(graph):
     D = list()
     for i in range(graph.node_num + 1):
         D.append([])
     return D
+
+
+def main(args, q):
+    graph_path = args.graph_path
+    seed_path = args.seed_path
+    model = args.model
+    random_seed = args.random_seed
+    np.random.seed(random_seed)
+
+    graph = Graph(read_graph_info(graph_path))
+    seeds = read_seed_info(seed_path)
+
+    if model == 'IC':
+        spd = influence_spread_computation_IC_Mu(seeds=seeds, graph=graph)
+        q.put(spd)
+    elif model == 'LT':
+        spd = influence_spread_computation_LT(graph=graph, seeds=seeds, r=0.001)
+        q.put(spd)
+    else:
+        raise ValueError("Mole type should be IC or LT")
 
 
 if __name__ == '__main__':
@@ -278,26 +296,32 @@ if __name__ == '__main__':
 
     np.random.seed(random_seed)
 
-    graph = Graph(read_graph_info(graph_path))
-    seeds = read_seed_info(seed_path)
-
+    # finish by algorithm
     if type == 0:
+        graph = Graph(read_graph_info(graph_path))
+        seeds = read_seed_info(seed_path)
         if model == 'IC':
             print influence_spread_computation_IC_Mu(seeds=seeds, graph=graph)
         elif model == 'LT':
-            print influence_spread_computation_LT(seeds=seeds, r=0.001)
+            print influence_spread_computation_LT(graph=graph, seeds=seeds, r=0.001)
         else:
             print('Type err')
+
+    # finish by interrupt
     elif type == 1:
         if timeout < 60:
             print 'Given time should not less than 60s!'
             exit(1)
-        timer = threading.Thread(target=settimeout, args=(timeout,))
-        timer.start()
-
-        if model == 'IC':
-            spd = influence_spread_computation_IC_Mu(seeds=seeds, graph=graph)
-        elif model == 'LT':
-            spd = influence_spread_computation_LT(seeds=seeds, r=0.001)
+        q = Queue.Queue()
+        t = threading.Thread(target=main, args=(args, q))
+        t.setDaemon(True)
+        t.start()
+        t.join(timeout - 1)
+        result = list()
+        while not q.empty():
+            result.append(q.get())
+        if len(result) != 0:
+            spd = result[-1]
+            print(spd)
         else:
-            print('Type err')
+            print("Given time was too short")
