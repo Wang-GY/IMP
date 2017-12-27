@@ -1,6 +1,6 @@
 # <center>Influence maximize problem</center>
  <center> 王戈扬 </center >  
-<center> 11510050</center >
+<center> 11510050</center >  
 ## Describe
 Kempe et al formulated influence maximization as a discrete optimization problem: Given a directed social graph with users as nodes, edge weights reflecting influence between users, and a number k (called budget), find k users, called the seed set, such that by activating them, the expected spread of the influence (just spread for brevity) according to a propagation model is maximized. The influence diffusion process unfolds in discrete time steps, as captured by the propagation model.  
 Two classical propagation models  are the Linear Threshold (LT) Model and the Independent Cascade (IC) Model, both taken from mathematical sociology. In both models, at any time step, a user is either active (an adopter of the product) or inactive. In the IC model, when an inactiveuser becomes active at a time step t, it gets exactly one chance to independently activate its currently inactive neighbors at time t +1. In the LT model, the sum of incoming edge weights on any node is assumed to be at most 1 and every user chooses an activation threshold uniformly at random from [0, 1]. At any time step, if the sum of incoming influence (edge weights) from the active neighbors of an inactive user exceeds its threshold, it becomes active. In both models, influence propagates until no more users can become active.  
