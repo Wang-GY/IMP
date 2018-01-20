@@ -565,7 +565,7 @@ if __name__ == '__main__':
             print('Model type err')
     elif termination_type == 1:
 
-
+        
         q = Queue.Queue()
         t = threading.Thread(target=main, args=(args, q))
         t.setDaemon(True)
