@@ -52,3 +52,6 @@ but the NewGreedyIC will cost about 11 sec. I don't have time to do other test.
 [1] W. Chen, Y. Wang, and S. Yang, “Efficient influence maximization in social networks,” in KDD 2009.  
 [2] Amit Goyal, Wei Lu, Laks V. S. Lakshmanan,SIMPATH: An Efficient Algorithm for Influence Maximization under the Linear Threshold Model in IEEE 2011.
 
+## 写给学弟学妹  
+欢迎大家参考，但是请不要抄袭！
+
